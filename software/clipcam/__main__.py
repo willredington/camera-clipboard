@@ -1,5 +1,6 @@
 """python -m clipcam [--config FILE] [--fake DIR] [--host H] [--port N]
    python -m clipcam [--config FILE] rectify IMAGE OUT.png   # offline check of marker positions
+   python -m clipcam sheets --start N [--count 10] OUT.pdf    # printable numbered pages with QR ids
 """
 from __future__ import annotations
 
@@ -56,6 +57,12 @@ def build_watcher(cfg: Config, camera, store: Store, env: Mapping[str, str]) -> 
     return Watcher(camera, Gate(cfg.gate), ocr, sink, a)
 
 
+def cmd_sheets(args):
+    from .pageid import write_sheets_pdf
+    write_sheets_pdf(args.start, args.count, args.out)
+    print(f"wrote pages {args.start}..{args.start + args.count - 1} to {args.out}")
+
+
 def cmd_serve(args, cfg):
     store = Store(cfg.output_dir, cfg.output.dpi, cfg.output.keep)
     rect = Rectifier(cfg.board, cfg.output.dpi, cfg.camera.detect_max_side)
@@ -109,7 +116,13 @@ def main(argv=None):
     r = sub.add_parser("rectify", help="rectify one image file and report the marker fit")
     r.add_argument("image")
     r.add_argument("out")
+    s = sub.add_parser("sheets", help="write a PDF of numbered pages with QR page ids (US Letter)")
+    s.add_argument("--start", type=int, required=True, help="first page number; never reuse numbers")
+    s.add_argument("--count", type=int, default=10)
+    s.add_argument("out")
     args = ap.parse_args(argv)
+    if args.cmd == "sheets":
+        return cmd_sheets(args)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     cfg = load_config(args.config)
