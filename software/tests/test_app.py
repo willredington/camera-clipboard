@@ -60,7 +60,7 @@ def test_capture_gallery_png_pdf(env):
 
 def test_preview_and_index(env):
     _, _, _, c = env
-    assert c.get("/").status_code == 200 and b"Capture" in c.get("/").data
+    assert c.get("/camera").status_code == 200 and b"Capture" in c.get("/camera").data
     p = c.get("/preview.jpg")
     assert p.mimetype == "image/jpeg" and cv2.imdecode(np.frombuffer(p.data, np.uint8), 1).shape[1] == 640
 

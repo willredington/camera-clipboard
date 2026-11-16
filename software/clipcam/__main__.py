@@ -96,7 +96,7 @@ def cmd_serve(args, cfg):
         wthread = threading.Thread(target=watcher.run, args=(stop,), name="auto-capture", daemon=True)
         wthread.start()
 
-    app = create_app(service, store, cfg.output.gallery)
+    app = create_app(service, store, cfg.output.gallery, documents=documents, watcher=watcher)
     try:
         app.run(host=cfg.server.host, port=cfg.server.port, threaded=True)
     finally:

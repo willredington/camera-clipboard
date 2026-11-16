@@ -13,6 +13,8 @@ clipcam/web.py       Flask app;  clipcam/__main__.py  CLI
 clipcam/gate.py      auto-capture: local "is this frame worth sending?" checks (pure OpenCV)
 clipcam/ocr.py       auto-capture: OpenRouter vision-model client
 clipcam/watcher.py   auto-capture: frame loop with cooldown, hourly cap and error backoff
+clipcam/pageid.py    numbered sheets: QR page ids and the printable PDF
+clipcam/documents.py per-page document store (live page, archive, revisions)
 tests/               pytest, synthetic board renderer (tests/synth.py)
 ```
 
@@ -101,12 +103,42 @@ Setup:
    result changes; use those numbers to adjust `[gate]`.
 4. `sudo systemctl restart clipcam`.
 
-Results land in `<output.dir>/ocr/<timestamp>.txt` with the image that was sent as `<timestamp>.jpg`, and each one is
-logged as `ocr <name>: <text>`. To send the text somewhere else, replace the `sink` in `build_watcher`
-(`clipcam/__main__.py`).
+Results are stored per printed page (see below) and each one is logged as `ocr page <n>: <text>`. To also send the
+text somewhere else, extend `on_result` in `build_watcher` (`clipcam/__main__.py`).
 
 Without ArUco markers on the board the manual **Capture** button fails (it needs the markers to flatten the page);
 auto-capture doesn't use them.
+
+## Numbered pages and the document portal
+
+Write on pre-printed numbered sheets. Each has "Page N" top-left and a 35 mm QR code top-right (payload `CCP:N`);
+the top-centre is left clear for the clip. Print them at 100% scale on US Letter:
+
+```
+.venv/bin/python -m clipcam sheets --start 1 --count 20 sheets.pdf
+```
+
+**Never reuse a page number**: the number is the document's identity. Start each new print run after the highest
+number you've printed (e.g. `--start 21` next time).
+
+How it behaves:
+
+* The **live** page is the sheet whose QR code the camera last read. Put a different sheet down and it becomes live
+  (even before you write on it); the previous one is **archived**. Put an old sheet back and it becomes live again,
+  keeping its text.
+* A frame is sent for transcription **only when the page's QR code is readable in that same frame**. A hand over the
+  code never archives anything; the portal shows **QR not visible** and the writing is sent once the code is clear.
+* Each transcription replaces the page's text (the model always reads the whole sheet); every revision is kept with
+  the image it came from.
+* A page that leaves the board with writing that wasn't sent yet (cooldown, hand in the way) is marked **unsent
+  changes**; it is sent when that page is put back.
+* Pages live in `<output.dir>/pages/<n>/` (`page.json` + one JPEG per revision); `live.json` remembers the live page
+  across restarts. Lower `[auto] min_interval_s` (e.g. 3) if API calls are cheap for you, to shrink the unsent window.
+
+The portal is at `http://<pi-hostname>.local:8080/` (the camera page moved to `/camera`): the live page on top
+(auto-refreshing, with Copy and Download), the archive below, and `/pages/<n>` for one page with all its revisions.
+It's a debugging view with no authentication, like the rest of the server. JSON: `/api/live`, `/api/pages`,
+`/api/pages/<n>`.
 
 ## Tests (laptop)
 
