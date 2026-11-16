@@ -1,0 +1,235 @@
+{
+ "units": "mm",
+ "board": [
+  260.0,
+  330.0,
+  3.0
+ ],
+ "ground_z": -6.5,
+ "cable": [
+  [
+   -26.0,
+   165.0,
+   6.75
+  ],
+  [
+   9.0,
+   165.0,
+   6.75
+  ],
+  [
+   9.0,
+   165.0,
+   11.75
+  ],
+  [
+   9.0,
+   165.0,
+   215.6
+  ],
+  [
+   9.0,
+   165.0,
+   222.1
+  ],
+  [
+   10.0,
+   165.0,
+   225.1
+  ],
+  [
+   14.5,
+   165.0,
+   225.1
+  ],
+  [
+   104.0,
+   165.0,
+   225.1
+  ],
+  [
+   107.5,
+   165.0,
+   225.1
+  ],
+  [
+   107.5,
+   165.0,
+   215.1
+  ],
+  [
+   111.0,
+   165.0,
+   215.1
+  ],
+  [
+   115.0,
+   165.0,
+   212.5
+  ],
+  [
+   115.0,
+   126.0,
+   212.5
+  ],
+  [
+   142.0,
+   126.0,
+   212.5
+  ]
+ ],
+ "items": [
+  {
+   "name": "board",
+   "file": "board.stl",
+   "color": "#c9b48a",
+   "kind": "board",
+   "rough": 0.8,
+   "metal": 0.0
+  },
+  {
+   "name": "paper",
+   "file": "paper.stl",
+   "color": "#f2f2ee",
+   "kind": "paper",
+   "rough": 0.9,
+   "metal": 0.0
+  },
+  {
+   "name": "corner_BL",
+   "file": "corner_BL.stl",
+   "color": "#2f6fbf",
+   "kind": "part",
+   "rough": 0.55,
+   "metal": 0.0
+  },
+  {
+   "name": "corner_BR",
+   "file": "corner_BR.stl",
+   "color": "#2f6fbf",
+   "kind": "part",
+   "rough": 0.55,
+   "metal": 0.0
+  },
+  {
+   "name": "corner_TL",
+   "file": "corner_TL.stl",
+   "color": "#2f6fbf",
+   "kind": "part",
+   "rough": 0.55,
+   "metal": 0.0
+  },
+  {
+   "name": "corner_TR",
+   "file": "corner_TR.stl",
+   "color": "#2f6fbf",
+   "kind": "part",
+   "rough": 0.55,
+   "metal": 0.0
+  },
+  {
+   "name": "clip_base",
+   "file": "clip_base.stl",
+   "color": "#2f6fbf",
+   "kind": "part",
+   "rough": 0.55,
+   "metal": 0.0
+  },
+  {
+   "name": "clip_lever",
+   "file": "clip_lever.stl",
+   "color": "#2f6fbf",
+   "kind": "part",
+   "rough": 0.55,
+   "metal": 0.0
+  },
+  {
+   "name": "clip_pivot_rod",
+   "file": "clip_pivot_rod.stl",
+   "color": "#c0c4c8",
+   "kind": "metal",
+   "rough": 0.3,
+   "metal": 1.0
+  },
+  {
+   "name": "clip_spring_0",
+   "file": "clip_spring_0.stl",
+   "color": "#9aa0a6",
+   "kind": "metal",
+   "rough": 0.35,
+   "metal": 1.0
+  },
+  {
+   "name": "clip_spring_1",
+   "file": "clip_spring_1.stl",
+   "color": "#9aa0a6",
+   "kind": "metal",
+   "rough": 0.35,
+   "metal": 1.0
+  },
+  {
+   "name": "mast_base",
+   "file": "mast_base.stl",
+   "color": "#d4572a",
+   "kind": "part",
+   "rough": 0.55,
+   "metal": 0.0
+  },
+  {
+   "name": "tube_vertical",
+   "file": "tube_vertical.stl",
+   "color": "#2b2b2b",
+   "kind": "tube",
+   "rough": 0.4,
+   "metal": 0.4
+  },
+  {
+   "name": "elbow",
+   "file": "elbow.stl",
+   "color": "#d4572a",
+   "kind": "part",
+   "rough": 0.55,
+   "metal": 0.0
+  },
+  {
+   "name": "tube_horizontal",
+   "file": "tube_horizontal.stl",
+   "color": "#2b2b2b",
+   "kind": "tube",
+   "rough": 0.4,
+   "metal": 0.4
+  },
+  {
+   "name": "camera_head",
+   "file": "camera_head.stl",
+   "color": "#d4572a",
+   "kind": "part",
+   "rough": 0.55,
+   "metal": 0.0
+  },
+  {
+   "name": "camera_pcb",
+   "file": "camera_pcb.stl",
+   "color": "#1a7f3c",
+   "kind": "pcb",
+   "rough": 0.5,
+   "metal": 0.0
+  },
+  {
+   "name": "pi_zero_2w",
+   "file": "pi_zero_2w.stl",
+   "color": "#2e9e57",
+   "kind": "pcb",
+   "rough": 0.5,
+   "metal": 0.0
+  },
+  {
+   "name": "usbc_breakout",
+   "file": "usbc_breakout.stl",
+   "color": "#b22222",
+   "kind": "pcb",
+   "rough": 0.5,
+   "metal": 0.0
+  }
+ ]
+}

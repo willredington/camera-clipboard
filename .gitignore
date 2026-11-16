@@ -1,0 +1,5 @@
+# Generated: `python3 make_clipboard.py out` / `python3 render_assembly.py out`
+out/
+__pycache__/
+# Generated: `python -m clipcam sheets ...`
+sheets-*.pdf
