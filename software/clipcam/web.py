@@ -202,7 +202,7 @@ def create_app(service: CaptureService, store: Store, gallery_size: int = 24,
         if documents is None:
             return None
         n = documents.live()
-        return next((p for p in documents.summaries() if p["number"] == n), None) if n is not None else None
+        return documents.summary(n) if n is not None else None
 
     @app.get("/api/live")
     def api_live():

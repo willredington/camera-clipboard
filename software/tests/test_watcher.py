@@ -366,3 +366,50 @@ def test_build_watcher_logs_results(tmp_path, caplog):
     w = bw(auto_cfg(), tmp_path, {"OPENROUTER_API_KEY": "k"})
     w.on_result(3, OcrResult("line1\nline2", "m", 1, 2))
     assert "ocr page 3: line1 ⏎ line2" in caplog.text
+
+
+# --- final review fixes ---
+
+def test_new_sheet_without_qr_yet_does_not_mark_old_page_unsent():
+    cam, pages = Cam(small_page(["page five"])), Pages(5)
+    w, clock, docs = make(cam=cam, pages=pages, min_interval_s=0)
+    assert "sent" in ticks(w, clock, 4)
+    cam.frame, pages.n = small_page(["a totally new sheet"]), None   # QR not read yet
+    assert "no_qr" in ticks(w, clock, 3)
+    pages.n = 6
+    ticks(w, clock, 3)
+    assert docs.live() == 6 and docs.get(5)["unsent"] is False
+
+
+def test_hand_lifted_from_qr_clears_pending():
+    cam, pages = Cam(small_page(["page five"])), Pages(5)
+    w, clock, docs = make(cam=cam, pages=pages, min_interval_s=0)
+    ticks(w, clock, 4)
+    cam.frame, pages.n = small_page(["page five", "new words"]), None
+    ticks(w, clock, 3)
+    assert w.status()["pending"] is True
+    cam.frame, pages.n = small_page(["page five"]), 5                  # writing not there after all; QR visible
+    out = ticks(w, clock, 3)
+    assert out[-1] == "unchanged" and w.status()["pending"] is False
+
+
+def test_unsent_flag_clears_when_returning_page_is_unchanged():
+    a = small_page(["page five words"])
+    cam, pages = Cam(a), Pages(5)
+    w, clock, docs = make(cam=cam, pages=pages, min_interval_s=0)
+    ticks(w, clock, 4)
+    cam.frame, pages.n = small_page(["six six"]), 6
+    ticks(w, clock, 4)
+    docs.set_unsent(5, True)
+    cam.frame, pages.n = a, 5
+    out = ticks(w, clock, 4)
+    assert out[-1] == "unchanged" and docs.get(5)["unsent"] is False
+
+
+def test_switch_during_cooldown_keeps_new_page_pending_without_extra_call():
+    cam, pages, ocr = Cam(small_page(["page five"])), Pages(5), Ocr()
+    w, clock, docs = make(cam=cam, pages=pages, ocr=ocr, min_interval_s=60)
+    ticks(w, clock, 4)
+    cam.frame, pages.n = small_page(["sheet six text"]), 6
+    out = ticks(w, clock, 4)
+    assert "cooldown" in out and ocr.calls == 1 and w.status()["pending"] is True and docs.live() == 6

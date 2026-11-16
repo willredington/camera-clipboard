@@ -81,3 +81,14 @@ def test_sheets_cli(tmp_path, capsys):
 def test_decodes_with_margin_below_camera_scale(seed):
     """The real page is ~1000 px wide in the frame; keep ~25% margin."""
     assert read_page_id(camera_like(render_sheet(123), width=750, seed=seed)) == 123
+
+
+def test_two_different_page_qrs_is_ambiguous():
+    a, b = render_sheet(5), render_sheet(6)
+    both = np.hstack([a, b])
+    assert read_page_id(both) is None
+
+
+def test_same_page_qr_twice_is_fine():
+    a = render_sheet(5)
+    assert read_page_id(np.hstack([a, a])) == 5

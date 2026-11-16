@@ -38,7 +38,7 @@ def parse_payload(s: str) -> int | None:
 
 
 def read_page_id(bgr: np.ndarray) -> int | None:
-    """First QR in the image whose payload is a clipcam page, else None. Never raises."""
+    """The clipcam page number in the image; None if there is none or several different ones. Never raises."""
     try:
         ok, infos, _, _ = _detector.detectAndDecodeMulti(bgr)
         texts = list(infos) if ok else []
@@ -48,11 +48,10 @@ def read_page_id(bgr: np.ndarray) -> int | None:
     except cv2.error as e:
         log.debug("QR detection failed: %s", e)
         return None
-    for t in texts:
-        n = parse_payload(t)
-        if n is not None:
-            return n
-    return None
+    found = {n for n in map(parse_payload, texts) if n is not None}
+    # Two different page codes in one frame (an old sheet's corner showing): ambiguous, treat as not visible
+    # so nothing gets filed under the wrong page.
+    return found.pop() if len(found) == 1 else None
 
 
 def _qr_image(n: int) -> np.ndarray:

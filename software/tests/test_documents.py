@@ -129,3 +129,38 @@ def test_image_path_validation(tmp_path):
     for bad in ("../live.json", "x.png", "nope.jpg", "page.json"):
         assert s.image_path(3, bad) is None
     assert s.image_path(99, name) is None
+
+
+# --- final review fixes ---
+
+def test_summary_of_one_page(tmp_path):
+    s = store(tmp_path)
+    s.add_revision(3, IMG, "hello\nthere")
+    assert s.summary(3)["first_line"] == "hello" and "revisions" not in s.summary(3)
+    assert s.summary(99) is None
+
+
+def test_summaries_do_not_read_page_json(tmp_path, monkeypatch):
+    s = store(tmp_path)
+    for n in (1, 2):
+        s.add_revision(n, IMG, f"page {n}")
+    import json as _json
+    real = _json.load
+    opened = []
+
+    def spy(f, *a, **k):
+        opened.append(getattr(f, "name", ""))
+        return real(f, *a, **k)
+    monkeypatch.setattr("clipcam.documents.json.load", spy)
+    assert [p["number"] for p in s.summaries()] == [2, 1] or [p["number"] for p in s.summaries()] == [1, 2]
+    assert opened and not any(name.endswith("page.json") for name in opened), opened
+
+
+def test_corrupt_page_json_is_kept_aside_not_overwritten(tmp_path, caplog):
+    s = store(tmp_path)
+    s.add_revision(7, IMG, "precious")
+    (tmp_path / "7" / "page.json").write_text("{broken")
+    s.set_live(7)
+    kept = list((tmp_path / "7").glob("page.json.corrupt-*"))
+    assert len(kept) == 1 and kept[0].read_text() == "{broken"
+    assert "corrupt" in caplog.text

@@ -1,6 +1,7 @@
 """Per-page document store: one folder per printed page number, with every OCR revision and its image.
 
 <dir>/<n>/page.json   {"number", "first_seen", "last_updated", "text", "unsent", "revisions": [{"time", "image", "text"}]}
+<dir>/<n>/summary.json the same without "revisions" (what the portal polls, so its cost doesn't grow with history)
 <dir>/<n>/<stamp>.jpg the image each revision was transcribed from
 <dir>/live.json       {"live": n | null}
 
@@ -63,14 +64,22 @@ class DocumentStore:
 
     def _load_or_new(self, n: int) -> dict:
         page = self._load(n)
+        path = self._page_file(n)
+        if page is None and path.exists():
+            # Unreadable record: keep it aside for recovery instead of silently replacing the page's history.
+            aside = path.with_name(f"page.json.corrupt-{time.strftime('%Y%m%d-%H%M%S', time.localtime(self.now()))}")
+            os.replace(path, aside)
+            log.warning("page %s: corrupt page.json moved to %s; starting a new record", n, aside.name)
         if page is None:
             t = self._iso()
             page = {"number": n, "first_seen": t, "last_updated": t, "text": "", "unsent": False, "revisions": []}
         return page
 
     def _save(self, page: dict) -> None:
-        (self.dir / str(page["number"])).mkdir(exist_ok=True)
-        self._write_json(self._page_file(page["number"]), page)
+        d = self.dir / str(page["number"])
+        d.mkdir(exist_ok=True)
+        self._write_json(d / "page.json", page)
+        self._write_json(d / "summary.json", self._summary(page))
 
     @staticmethod
     def _summary(page: dict) -> dict:
@@ -124,13 +133,25 @@ class DocumentStore:
     def get(self, n: int) -> dict | None:
         return self._load(n)
 
+    def summary(self, n: int) -> dict | None:
+        """One page without its revisions; reads the small summary.json, falling back to page.json."""
+        try:
+            with open(self.dir / str(n) / "summary.json", encoding="utf-8") as f:
+                summ = json.load(f)
+            if isinstance(summ, dict) and summ.get("number") == n:
+                return summ
+        except (OSError, ValueError):
+            pass
+        page = self._load(n)
+        return None if page is None else self._summary(page)
+
     def summaries(self) -> list[dict]:
         pages = []
         for d in self.dir.iterdir():
             if d.is_dir() and d.name.isdigit():
-                page = self._load(int(d.name))
-                if page is not None:
-                    pages.append(self._summary(page))
+                summ = self.summary(int(d.name))
+                if summ is not None:
+                    pages.append(summ)
         return sorted(pages, key=lambda p: (p["last_updated"] or "", p["number"]), reverse=True)
 
     def image_path(self, n: int, name: str) -> Path | None:

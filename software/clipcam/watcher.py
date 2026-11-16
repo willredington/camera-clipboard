@@ -36,13 +36,14 @@ class Watcher:
         self._backoff = cfg.backoff_s
         self._last_reason: str | None = None
         self._refs: dict[int, np.ndarray | None] = {}               # per-page "already sent" ink masks
-        self._pending = False                                        # live page has changes not yet sent
+        self._pending = False         # live page has QR-confirmed changes not yet sent (cooldown, cap, backoff, error)
+        self._no_qr_pending = False   # a changed frame was seen but its QR didn't read: may not even be this page
         self._qr_visible: bool | None = None
         self._last = "starting"
 
     def status(self) -> dict:
-        return {"live": self.documents.live(), "qr_visible": self._qr_visible, "pending": self._pending,
-                "last": self._last}
+        return {"live": self.documents.live(), "qr_visible": self._qr_visible,
+                "pending": self._pending or self._no_qr_pending, "last": self._last}
 
     def step(self) -> str:
         self._last = self._step()
@@ -65,12 +66,17 @@ class Watcher:
         self._qr_visible = page is not None
         if page is None:
             if d.send:
-                self._pending = True
+                self._no_qr_pending = True
                 return "no_qr"
             return d.reason
         if page != self.documents.live():
             d = self._switch(page)
+        self._no_qr_pending = False   # this frame's QR is readable: we know exactly what's on the page
         if not d.send:
+            self._pending = False     # nothing new vs what was sent for this page
+            summ = self.documents.summary(page)
+            if summ is not None and summ.get("unsent"):
+                self.documents.set_unsent(page, False)
             return d.reason
 
         now = self.clock()
