@@ -158,3 +158,50 @@ def test_writing_with_nearly_still_hand_blocks_send():
     g = Gate(GateCfg())
     ds = [g.check(hand_frame(1400 + 4 * i, lines=(" ".join(words[:i + 1]),), seed=i)) for i in range(8)]
     assert not any(d.send for d in ds), [(d.reason, d.motion, d.change) for d in ds]
+
+
+# --- per-page reference (document portal Task 3) ---
+
+def settle(g, img, n=3):
+    return [g.check(img) for _ in range(n)][-1]
+
+
+def test_reference_swap_and_recheck():
+    a, b = small_page(["page a text here"]), small_page(["completely other", "words on b"])
+    g = Gate(GateCfg())
+    assert settle(g, a).send
+    g.mark_sent()
+    ref_a = g.reference
+    assert ref_a is not None
+    assert settle(g, b).reason == "changed"
+    g.reference = None
+    assert g.recheck().reason == "changed"
+    g.mark_sent()
+    assert settle(g, a).reason == "changed"      # compared against b's reference
+    g.reference = ref_a
+    assert g.recheck().reason == "unchanged"
+
+
+def test_recheck_keeps_moving_decision():
+    g = Gate(GateCfg())
+    g.check(page(["hello"], blob_at=(600, 700)))
+    assert g.check(page(["hello"], blob_at=(1100, 700))).reason == "moving"
+    assert g.recheck().reason == "moving"
+
+
+def test_recheck_does_not_touch_stability():
+    g = Gate(GateCfg())
+    img = page(["hello"])
+    g.check(img)
+    g.check(img)
+    g.recheck()
+    g.recheck()
+    assert g.check(img).reason == "changed"      # still exactly 2 stable frames, not 4
+
+
+def test_reference_setter_none_means_send():
+    img = page(["hello"])
+    g = sent_gate(img)
+    assert g.check(img).reason == "unchanged"
+    g.reference = None
+    assert g.check(img).reason == "changed"

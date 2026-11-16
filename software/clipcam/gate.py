@@ -54,6 +54,7 @@ class Gate:
         self._stable = 0
         self._mask: np.ndarray | None = None   # ink mask of the last checked frame
         self._ref: np.ndarray | None = None    # ink mask of the last sent frame
+        self._last: Decision | None = None     # decision from the last check()
 
     def _gray(self, bgr: np.ndarray) -> np.ndarray:
         h, w = bgr.shape[:2]
@@ -62,6 +63,10 @@ class Gate:
         return cv2.GaussianBlur(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), (5, 5), 0)
 
     def check(self, bgr: np.ndarray) -> Decision:
+        self._last = self._check(bgr)
+        return self._last
+
+    def _check(self, bgr: np.ndarray) -> Decision:
         c = self.cfg
         gray = self._gray(bgr)
         prev, self._prev = self._prev, gray
@@ -95,12 +100,34 @@ class Gate:
         if self._stable < c.stable_frames:
             return Decision(False, "settling", bright, ink, motion, None)
 
+        return self._compare(bright, ink, motion)
+
+    def _compare(self, bright: float, ink: float, motion: float | None) -> Decision:
+        """Still frame: compare the last ink mask with the 'already sent' reference."""
         change = None
-        if self._ref is not None and self._ref.shape == mask.shape:
-            change = self._change(mask, self._ref)
-            if change < c.min_change_frac:
+        if self._ref is not None and self._ref.shape == self._mask.shape:
+            change = self._change(self._mask, self._ref)
+            if change < self.cfg.min_change_frac:
                 return Decision(False, "unchanged", bright, ink, motion, change)
         return Decision(True, "changed", bright, ink, motion, change)
+
+    def recheck(self) -> Decision:
+        """Re-evaluate the last checked frame against the current reference (after a page switch).
+        Motion and stability state are untouched; frames that never reached the comparison keep their decision."""
+        d = self._last
+        if d is None or d.reason not in ("changed", "unchanged"):
+            return d
+        self._last = self._compare(d.brightness, d.ink, d.motion)
+        return self._last
+
+    @property
+    def reference(self) -> np.ndarray | None:
+        """Ink mask of the last sent frame for the current page (None = nothing sent yet)."""
+        return self._ref
+
+    @reference.setter
+    def reference(self, mask: np.ndarray | None) -> None:
+        self._ref = mask
 
     def _change(self, mask: np.ndarray, ref: np.ndarray) -> float:
         k = np.ones((2 * self.cfg.tolerance_px + 1,) * 2, np.uint8)
