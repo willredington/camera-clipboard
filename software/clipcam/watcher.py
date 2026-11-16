@@ -23,6 +23,7 @@ class Watcher:
         self._calls: collections.deque[float] = collections.deque()  # API call times in the trailing hour
         self._next_allowed = float("-inf")                           # error backoff
         self._backoff = cfg.backoff_s
+        self._last_reason: str | None = None
 
     def step(self) -> str:
         c = self.cfg
@@ -33,7 +34,10 @@ class Watcher:
             return "camera_error"
         img = prepare(frame, c.rotate_cw, c.roi)
         d = self.gate.check(img)
-        log.debug("gate %s bright=%.0f ink=%.4f motion=%s change=%s", d.reason, d.brightness, d.ink, d.motion, d.change)
+        if d.reason != self._last_reason:  # log transitions only, so tuning info doesn't flood the journal
+            log.info("gate: %s (brightness %.0f, ink %.4f, motion %s, change %s)", d.reason, d.brightness, d.ink,
+                     "-" if d.motion is None else f"{d.motion:.4f}", "-" if d.change is None else f"{d.change:.4f}")
+            self._last_reason = d.reason
         if not d.send:
             return d.reason
 

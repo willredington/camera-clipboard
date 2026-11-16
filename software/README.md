@@ -10,10 +10,13 @@ clipcam/hardware.py  Led / Button (gpiozero) and FakeLed
 clipcam/service.py   LED on -> still -> rectify -> save, with a lock
 clipcam/store.py     PNG + thumbnail, listing, PDF
 clipcam/web.py       Flask app;  clipcam/__main__.py  CLI
+clipcam/gate.py      auto-capture: local "is this frame worth sending?" checks (pure OpenCV)
+clipcam/ocr.py       auto-capture: OpenRouter vision-model client
+clipcam/watcher.py   auto-capture: frame loop with cooldown, hourly cap and error backoff
 tests/               pytest, synthetic board renderer (tests/synth.py)
 ```
 
-## Setup on the Pi (Pi OS Lite 64-bit, Bookworm)
+## Setup on the Pi (Pi OS Lite 64-bit, Bookworm; not Trixie, whose numpy 2 breaks the pins below)
 
 1. Enable nothing special: the camera is auto-detected on Bookworm. Copy this `software/` folder to the Pi.
 2. `./install.sh`. It apt-installs `python3-picamera2 python3-flask python3-gpiozero python3-pil python3-numpy`,
@@ -65,6 +68,45 @@ frame is saved as `failed-*.jpg` in the output folder.
 * Button: set `button.pin`; a press does the same as Capture.
 * Laptop, no hardware: `python -m clipcam --fake some_folder_of_photos`. It cycles through the images as "captures" and
   skips the camera, LED and button. `python tests/synth.py DIR` writes synthetic test photos.
+
+## Auto-capture + OCR
+
+With `[auto] enabled = true` the server also runs a background loop: every `interval_s` (2 s) it takes the current
+frame of the camera's video stream (2304 x 1296, no LED, no mode switch), rotates it (`rotate_cw`), crops it to the
+paper (`roi`), and runs cheap local checks. Only a frame that passes them goes to the vision model on OpenRouter.
+
+The checks (`[gate]`, in order), each of which skips the frame:
+
+| Result | Meaning |
+|---|---|
+| `dark` | mean brightness below `min_brightness` (lights off) |
+| `blank` | almost no ink on the page (`min_ink_frac`) |
+| `moving` | differs from the previous frame by more than `motion_thresh` (a hand writing) |
+| `settling` | not yet `stable_frames` still frames in a row |
+| `unchanged` | ink added or removed since the last send is below `min_change_frac` |
+
+Cost controls on top: at least `min_interval_s` (10 s) between calls, at most `max_per_hour` (60) calls, and after a
+failed call (network, bad key, 429) a wait of `backoff_s` (30 s) doubling up to `backoff_max_s` (10 min). Failed calls
+count towards both limits. The image sent is downscaled to `max_side` (1600 px).
+
+Setup:
+
+1. Put `OPENROUTER_API_KEY=sk-or-...` in `clipcam.env` next to `config.toml` (created by `install.sh`, mode 600).
+   Without a key the server still runs and logs that auto-capture is disabled.
+2. In `config.toml`: `[auto] enabled = true`, `rotate_cw` so the text is upright (the current mount: 270), and `roi`
+   = the paper's rectangle in the rotated frame as fractions `[x, y, w, h]`. Pick a model (`model`, default
+   `google/gemini-2.5-flash`; see openrouter.ai/models).
+3. Tune with `dry_run = true` first: it runs the checks and logs `dry run: would send` without calling the API.
+   `journalctl -u clipcam -f` shows a `gate: <result> (brightness, ink, motion, change)` line whenever the check
+   result changes; use those numbers to adjust `[gate]`.
+4. `sudo systemctl restart clipcam`.
+
+Results land in `<output.dir>/ocr/<timestamp>.txt` with the image that was sent as `<timestamp>.jpg`, and each one is
+logged as `ocr <name>: <text>`. To send the text somewhere else, replace the `sink` in `build_watcher`
+(`clipcam/__main__.py`).
+
+Without ArUco markers on the board the manual **Capture** button fails (it needs the markers to flatten the page);
+auto-capture doesn't use them.
 
 ## Tests (laptop)
 

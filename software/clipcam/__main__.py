@@ -5,16 +5,22 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
+import threading
+from typing import Mapping
 
 import cv2
 
 from .camera import FakeCamera
-from .config import load_config
+from .config import Config, load_config
+from .gate import Gate
 from .hardware import FakeLed
+from .ocr import OpenRouterOcr
 from .rectify import Rectifier
 from .service import Busy, CaptureService
 from .store import Store
+from .watcher import Watcher
 from .web import create_app
 
 log = logging.getLogger("clipcam")
@@ -30,6 +36,24 @@ def cmd_rectify(args, cfg):
           f"{'n/a' if res.rms_mm is None else format(res.rms_mm, '.3f') + ' mm'}; wrote {args.out}")
     for w in res.warnings:
         print("warning:", w)
+
+
+def build_watcher(cfg: Config, camera, store: Store, env: Mapping[str, str]) -> Watcher | None:
+    a = cfg.auto
+    if not a.enabled:
+        return None
+    key = env.get(a.api_key_env, "").strip()
+    if not key and not a.dry_run:
+        log.error("auto-capture disabled: set %s (see clipcam.env)", a.api_key_env)
+        return None
+    ocr = OpenRouterOcr(key, a.model, a.max_side) if key else None
+
+    def sink(img, result):
+        name = store.save_ocr(img, result.text)
+        log.info("ocr %s: %s (tokens in=%s out=%s)", name, result.text[:80].replace("\n", " \u23ce "),
+                 result.prompt_tokens, result.completion_tokens)
+
+    return Watcher(camera, Gate(cfg.gate), ocr, sink, a)
 
 
 def cmd_serve(args, cfg):
@@ -57,10 +81,19 @@ def cmd_serve(args, cfg):
         button = Button(cfg.button.pin, pressed)
         log.info("button on GPIO%d", cfg.button.pin)
 
+    stop = threading.Event()
+    watcher, wthread = build_watcher(cfg, camera, store, os.environ), None
+    if watcher is not None:
+        wthread = threading.Thread(target=watcher.run, args=(stop,), name="auto-capture", daemon=True)
+        wthread.start()
+
     app = create_app(service, store, cfg.output.gallery)
     try:
         app.run(host=cfg.server.host, port=cfg.server.port, threaded=True)
     finally:
+        stop.set()
+        if wthread is not None:
+            wthread.join(timeout=10)  # let an in-flight frame/API call finish before the camera closes
         for c in (button, camera, led):
             if c is not None:
                 c.close()

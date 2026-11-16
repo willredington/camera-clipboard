@@ -187,3 +187,58 @@ def test_config_auto_and_gate_sections(tmp_path):
     assert cfg.gate.min_ink_frac == 0.01 and cfg.gate.stable_frames == 2
     d = load_config(None)
     assert not d.auto.enabled and d.auto.interval_s == 2.0 and d.camera.watch_width == 2304
+
+
+# --- build_watcher (Task 5) ---
+from clipcam.__main__ import build_watcher  # noqa: E402
+from clipcam.config import Config  # noqa: E402
+from clipcam.ocr import OpenRouterOcr  # noqa: E402
+
+
+def auto_cfg(**kw):
+    cfg = Config()
+    cfg.auto.enabled = True
+    for k, v in kw.items():
+        setattr(cfg.auto, k, v)
+    return cfg
+
+
+def test_build_watcher_disabled(tmp_path):
+    assert build_watcher(Config(), Cam(), Store(tmp_path, 200), {"OPENROUTER_API_KEY": "k"}) is None
+
+
+def test_build_watcher_missing_key_logs(tmp_path, caplog):
+    assert build_watcher(auto_cfg(), Cam(), Store(tmp_path, 200), {}) is None
+    assert "OPENROUTER_API_KEY" in caplog.text
+
+
+def test_build_watcher_dry_run_without_key(tmp_path):
+    w = build_watcher(auto_cfg(dry_run=True), Cam(), Store(tmp_path, 200), {})
+    assert w is not None and w.ocr is None
+
+
+def test_build_watcher_with_key(tmp_path):
+    w = build_watcher(auto_cfg(model="x/y"), Cam(), Store(tmp_path, 200), {"OPENROUTER_API_KEY": "k"})
+    assert isinstance(w.ocr, OpenRouterOcr) and w.ocr.model == "x/y" and w.ocr.api_key == "k"
+
+
+def test_build_watcher_custom_env_name(tmp_path):
+    w = build_watcher(auto_cfg(api_key_env="MY_KEY"), Cam(), Store(tmp_path, 200), {"MY_KEY": "z"})
+    assert w.ocr.api_key == "z"
+
+
+def test_default_sink_saves_text(tmp_path):
+    store = Store(tmp_path, 200)
+    w = build_watcher(auto_cfg(), Cam(), store, {"OPENROUTER_API_KEY": "k"})
+    w.sink(np.full((10, 10, 3), 200, np.uint8), OcrResult("line1\nline2", "m", 1, 2))
+    (txt,) = (tmp_path / "ocr").glob("*.txt")
+    assert txt.read_text() == "line1\nline2"
+
+
+def test_logs_gate_result_only_when_it_changes(caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="clipcam.watcher")
+    w, clock, _ = make(dry_run=True)
+    ticks(w, clock, 8)  # settling, settling, dry_run, unchanged x5
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("gate:")]
+    assert [l.split()[1] for l in lines] == ["settling", "changed", "unchanged"], lines
