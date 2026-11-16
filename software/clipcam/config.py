@@ -57,7 +57,7 @@ class AutoCfg:
     roi: list[float] = field(default_factory=lambda: [0.0, 0.0, 1.0, 1.0])  # [x, y, w, h] fractions of the rotated frame
     min_interval_s: float = 10.0         # minimum time between API calls
     max_per_hour: int = 60               # API calls in any trailing hour
-    model: str = "google/gemini-2.5-flash"
+    model: str = "openai/gpt-6-luna"
     api_key_env: str = "OPENROUTER_API_KEY"
     max_side: int = 1600                 # image long side sent to the model
     backoff_s: float = 30.0              # wait after a failed call; doubles up to backoff_max_s

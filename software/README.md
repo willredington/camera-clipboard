@@ -95,7 +95,7 @@ Setup:
    Without a key the server still runs and logs that auto-capture is disabled.
 2. In `config.toml`: `[auto] enabled = true`, `rotate_cw` so the text is upright (the current mount: 270), and `roi`
    = the paper's rectangle in the rotated frame as fractions `[x, y, w, h]`. Pick a model (`model`, default
-   `google/gemini-2.5-flash`; see openrouter.ai/models).
+   `openai/gpt-6-luna`; see openrouter.ai/models).
 3. Tune with `dry_run = true` first: it runs the checks and logs `dry run: would send` without calling the API.
    `journalctl -u clipcam -f` shows a `gate: <result> (brightness, ink, motion, change)` line whenever the check
    result changes; use those numbers to adjust `[gate]`.
