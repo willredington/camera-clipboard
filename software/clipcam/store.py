@@ -22,17 +22,31 @@ class Store:
         self.dpi = dpi
         self.keep = keep
 
-    def save_page(self, bgr: np.ndarray) -> str:
+    @staticmethod
+    def _unique_name(directory: Path, ext: str) -> str:
         base = time.strftime("%Y%m%d-%H%M%S")
         name, n = base, 1
-        while (self.dir / f"{name}.png").exists():
+        while (directory / f"{name}{ext}").exists():
             name, n = f"{base}-{n}", n + 1
+        return name
+
+    def save_page(self, bgr: np.ndarray) -> str:
+        name = self._unique_name(self.dir, ".png")
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         Image.fromarray(rgb).save(self.dir / f"{name}.png", dpi=(self.dpi, self.dpi), compress_level=3)
         h = round(bgr.shape[0] * THUMB_W / bgr.shape[1])
         cv2.imwrite(str(self.thumbs / f"{name}.jpg"), cv2.resize(bgr, (THUMB_W, h), interpolation=cv2.INTER_AREA),
                     [cv2.IMWRITE_JPEG_QUALITY, 75])
         self._prune()
+        return name
+
+    def save_ocr(self, bgr: np.ndarray, text: str) -> str:
+        """Auto-capture result: ocr/<name>.jpg (the frame sent to the model) and ocr/<name>.txt."""
+        d = self.dir / "ocr"
+        d.mkdir(exist_ok=True)
+        name = self._unique_name(d, ".txt")
+        cv2.imwrite(str(d / f"{name}.jpg"), bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        (d / f"{name}.txt").write_text(text, encoding="utf-8")
         return name
 
     def save_failed(self, bgr: np.ndarray) -> Path:

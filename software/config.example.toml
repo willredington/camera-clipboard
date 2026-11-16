@@ -21,6 +21,35 @@ gallery = 24        # captures listed on the web page
 settle_s = 1.0      # auto-exposure settle time under the LED before autofocus
 af_timeout_s = 6.0
 af_range = "full"   # normal | macro | full
+watch_width = 2304  # running video stream used by the preview and auto-capture
+watch_height = 1296
+
+[auto]
+# Auto-capture: grab a frame every interval_s, run the local [gate] checks, and send only new, settled
+# writing to an OpenRouter vision model. The API key comes from the environment variable named by
+# api_key_env (on the Pi: put OPENROUTER_API_KEY=... in clipcam.env). Results go to <output.dir>/ocr/.
+enabled = false
+dry_run = false            # true = run the checks and log "would send", never call the API
+interval_s = 2.0
+rotate_cw = 0              # degrees clockwise, 0/90/180/270; the current boom mount needs 270
+roi = [0.0, 0.0, 1.0, 1.0] # [x, y, w, h] of the paper as fractions of the rotated frame
+min_interval_s = 10.0      # minimum seconds between API calls
+max_per_hour = 60          # API calls in any trailing hour
+model = "google/gemini-2.5-flash"
+api_key_env = "OPENROUTER_API_KEY"
+max_side = 1600            # long side (px) of the image sent to the model
+backoff_s = 30.0           # wait after a failed call, doubling up to backoff_max_s
+backoff_max_s = 600.0
+
+[gate]
+# Local checks, in order: dark -> blank -> moving -> settling -> unchanged -> send.
+work_side = 400            # checks run on a copy downscaled to this long side
+min_brightness = 40.0      # mean grey level (0-255) below this = "dark"
+min_ink_frac = 0.0005      # ink pixels / all pixels below this = "blank"
+motion_thresh = 0.02       # mean difference to the previous frame (0-1) above this = "moving"
+stable_frames = 2          # still frames needed before sending
+min_change_frac = 0.0003   # ink added or removed since the last send, below this = "unchanged"
+tolerance_px = 3           # ink within this many px (at work_side) of old ink counts as unchanged
 
 [board]
 board_w = 260.0

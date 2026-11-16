@@ -1,6 +1,7 @@
 """Camera layer: Picamera2 on the Pi, FakeCamera (images from a folder) elsewhere.
 
-Both give: capture_still() -> full-res BGR uint8 array, preview_jpeg() -> bytes.
+Both give: capture_still() -> full-res BGR uint8 array, capture_frame() -> current video-stream frame (BGR),
+preview_jpeg() -> bytes.
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ def _jpeg(bgr: np.ndarray, quality: int = 70) -> bytes:
 
 
 class PiCamera:
-    """Preview runs at low res; a capture switches to the full-res still mode, autofocuses, grabs one frame
+    """The video stream runs at watch size (preview and auto-capture read it); a still capture switches to the full-res still mode, autofocuses, grabs one frame
     and switches back. The LED is switched by the caller around capture_still()."""
 
     def __init__(self, cfg: CameraCfg):
@@ -37,7 +38,7 @@ class PiCamera:
         self._last_preview = b""
         self.cam = Picamera2()
         self._preview_cfg = self.cam.create_preview_configuration(
-            main={"size": (cfg.preview_width, cfg.preview_height), "format": "RGB888"},
+            main={"size": (cfg.watch_width, cfg.watch_height), "format": "RGB888"},
             controls={"AfMode": controls.AfModeEnum.Continuous},
             buffer_count=2)
         self._still_cfg = self.cam.create_still_configuration(
@@ -52,10 +53,18 @@ class PiCamera:
             return self._last_preview
         try:
             # "RGB888" in libcamera/Picamera2 is B,G,R in memory, i.e. already OpenCV order.
-            self._last_preview = _jpeg(self.cam.capture_array("main"))
+            frame = self.cam.capture_array("main")
+            w = self.cfg.preview_width
+            small = cv2.resize(frame, (w, round(frame.shape[0] * w / frame.shape[1])), interpolation=cv2.INTER_AREA)
+            self._last_preview = _jpeg(small)
             return self._last_preview
         finally:
             self._lock.release()
+
+    def capture_frame(self) -> np.ndarray:
+        """Current frame of the running video stream; waits while a still capture is in progress."""
+        with self._lock:
+            return self.cam.capture_array("main")
 
     def capture_still(self) -> np.ndarray:
         with self._lock:
@@ -99,6 +108,9 @@ class FakeCamera:
         img = self._load(self._i)
         w = self.cfg.preview_width
         return _jpeg(cv2.resize(img, (w, round(img.shape[0] * w / img.shape[1])), interpolation=cv2.INTER_AREA))
+
+    def capture_frame(self) -> np.ndarray:
+        return self.capture_still()
 
     def capture_still(self) -> np.ndarray:
         with self._lock:

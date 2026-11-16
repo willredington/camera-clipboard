@@ -5,6 +5,7 @@ import tomllib
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 
+from .gate import GateCfg
 from .rectify import BoardGeometry
 
 
@@ -24,6 +25,8 @@ class CameraCfg:
     af_timeout_s: float = 6.0
     af_range: str = "full"       # "normal" | "macro" | "full"
     detect_max_side: int = 1600  # marker detection runs on an image downscaled to this long side
+    watch_width: int = 2304      # running video stream used for preview and auto-capture (full-FOV binned mode)
+    watch_height: int = 1296
 
 
 @dataclass
@@ -46,6 +49,22 @@ class OutputCfg:
 
 
 @dataclass
+class AutoCfg:
+    enabled: bool = False
+    dry_run: bool = False                # run the gate and log, but never call the API
+    interval_s: float = 2.0              # time between frames
+    rotate_cw: int = 0                   # 0/90/180/270 degrees clockwise, applied before the crop
+    roi: list[float] = field(default_factory=lambda: [0.0, 0.0, 1.0, 1.0])  # [x, y, w, h] fractions of the rotated frame
+    min_interval_s: float = 10.0         # minimum time between API calls
+    max_per_hour: int = 60               # API calls in any trailing hour
+    model: str = "google/gemini-2.5-flash"
+    api_key_env: str = "OPENROUTER_API_KEY"
+    max_side: int = 1600                 # image long side sent to the model
+    backoff_s: float = 30.0              # wait after a failed call; doubles up to backoff_max_s
+    backoff_max_s: float = 600.0
+
+
+@dataclass
 class Config:
     server: ServerCfg = field(default_factory=ServerCfg)
     camera: CameraCfg = field(default_factory=CameraCfg)
@@ -53,6 +72,8 @@ class Config:
     button: ButtonCfg = field(default_factory=ButtonCfg)
     output: OutputCfg = field(default_factory=OutputCfg)
     board: BoardGeometry = field(default_factory=BoardGeometry)
+    auto: AutoCfg = field(default_factory=AutoCfg)
+    gate: GateCfg = field(default_factory=GateCfg)
 
     @property
     def output_dir(self) -> Path:
