@@ -17,7 +17,8 @@ class GateCfg:
     work_side: int = 400            # checks run on a copy downscaled to this long side
     min_brightness: float = 40.0    # mean grey level (0-255) below which the frame is "dark"
     min_ink_frac: float = 0.0005    # fraction of ink pixels below which the page is "blank"
-    motion_thresh: float = 0.02     # mean abs difference to the previous frame (0-1) above which it is "moving"
+    motion_delta: int = 25          # a pixel "moved" if its grey level changed by more than this since the last frame
+    motion_thresh: float = 0.0005   # fraction of moved pixels above which the frame is "moving"
     stable_frames: int = 2          # consecutive still frames required before sending
     min_change_frac: float = 0.0003  # ink added/removed vs the last sent frame, as a fraction of the image
     tolerance_px: int = 3           # ink this close to the reference's ink counts as unchanged
@@ -73,14 +74,20 @@ class Gate:
 
         mask = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 25, 15)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8)) > 0
-        self._mask = mask
+        prev_mask, self._mask = self._mask, mask
         ink = float(mask.mean())
         if ink < c.min_ink_frac:
             self._stable = 0
             return Decision(False, "blank", bright, ink, None, None)
 
-        motion = None if prev is None else float(np.abs(gray.astype(np.int16) - prev).mean() / 255)
-        if motion is not None and motion > c.motion_thresh:
+        # Local, not a global mean: a writing hand covers only a few % of the frame, and a global mean can't
+        # tell it apart from sensor noise or auto-exposure drift, which shift every pixel a little.
+        motion = None if prev is None else float((cv2.absdiff(gray, prev) > c.motion_delta).mean())
+        # Ink still appearing since the previous frame also counts as moving: a pen writing changes the page
+        # even when the hand holding it barely moves.
+        writing = (prev is not None and prev_mask is not None and prev_mask.shape == mask.shape
+                   and self._change(mask, prev_mask) >= c.min_change_frac)
+        if motion is not None and (motion > c.motion_thresh or writing):
             self._stable = 0
             return Decision(False, "moving", bright, ink, motion, None)
         if motion is not None:

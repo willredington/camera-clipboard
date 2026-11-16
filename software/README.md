@@ -81,7 +81,7 @@ The checks (`[gate]`, in order), each of which skips the frame:
 |---|---|
 | `dark` | mean brightness below `min_brightness` (lights off) |
 | `blank` | almost no ink on the page (`min_ink_frac`) |
-| `moving` | differs from the previous frame by more than `motion_thresh` (a hand writing) |
+| `moving` | more than `motion_thresh` of the pixels changed by over `motion_delta` grey levels since the previous frame (a hand writing) |
 | `settling` | not yet `stable_frames` still frames in a row |
 | `unchanged` | ink added or removed since the last send is below `min_change_frac` |
 

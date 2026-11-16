@@ -46,7 +46,8 @@ backoff_max_s = 600.0
 work_side = 400            # checks run on a copy downscaled to this long side
 min_brightness = 40.0      # mean grey level (0-255) below this = "dark"
 min_ink_frac = 0.0005      # ink pixels / all pixels below this = "blank"
-motion_thresh = 0.02       # mean difference to the previous frame (0-1) above this = "moving"
+motion_delta = 25          # a pixel "moved" if its grey level changed by more than this since the previous frame
+motion_thresh = 0.0005     # fraction of moved pixels above this = "moving" (a hand)
 stable_frames = 2          # still frames needed before sending
 min_change_frac = 0.0003   # ink added or removed since the last send, below this = "unchanged"
 tolerance_px = 3           # ink within this many px (at work_side) of old ink counts as unchanged

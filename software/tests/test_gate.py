@@ -123,3 +123,38 @@ def test_handwriting_size_line_is_not_blank_and_new_word_is_seen():
     g.mark_sent()
     ds = [g.check(small_page(["meeting notes for monday", "call bob"], noise=3, seed=s)) for s in range(1, 4)]
     assert ds[-1].send, [(d.reason, d.change) for d in ds]
+
+
+def hand_frame(x, lines=("meeting notes for monday",), noise=3, seed=0):
+    """Realistic writing hand: skin-toned, ~4% of the frame, with a pen, over handwriting-size text."""
+    img = small_page(list(lines), noise=noise, seed=seed)
+    cv2.ellipse(img, (x, 700), (260, 160), 20, 0, 360, (150, 170, 205), -1)
+    cv2.line(img, (x - 150, 640), (x - 260, 560), (40, 40, 40), 6)
+    return img
+
+
+def test_realistic_writing_hand_blocks_send():
+    g = Gate(GateCfg())
+    ds = [g.check(hand_frame(800 + 40 * i, seed=i)) for i in range(10)]
+    assert not any(d.send for d in ds), [(d.reason, d.motion) for d in ds]
+
+
+def test_slow_hand_blocks_send():
+    g = Gate(GateCfg())
+    ds = [g.check(hand_frame(800 + 20 * i, seed=i)) for i in range(10)]
+    assert not any(d.send for d in ds), [(d.reason, d.motion) for d in ds]
+
+
+def test_exposure_drift_is_not_motion():
+    g = sent_gate(small_page(["meeting notes for monday"], noise=3))
+    base = small_page(["meeting notes for monday"], noise=3, seed=1).astype(np.int16)
+    ds = [g.check(np.clip(base + 3 * (i % 2), 0, 255).astype(np.uint8)) for i in range(4)]
+    assert all(d.reason == "unchanged" for d in ds), [(d.reason, d.motion) for d in ds]
+
+
+def test_writing_with_nearly_still_hand_blocks_send():
+    """Hand drifts only 4 px per tick, but new ink appears every tick: still writing, don't send yet."""
+    words = "the quick brown fox jumps over the lazy dog again".split()
+    g = Gate(GateCfg())
+    ds = [g.check(hand_frame(1400 + 4 * i, lines=(" ".join(words[:i + 1]),), seed=i)) for i in range(8)]
+    assert not any(d.send for d in ds), [(d.reason, d.motion, d.change) for d in ds]
