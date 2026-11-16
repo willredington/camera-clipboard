@@ -1,0 +1,16 @@
+[Unit]
+Description=Camera clipboard capture server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@DIR@
+ExecStart=@DIR@/.venv/bin/python -m clipcam --config @DIR@/config.toml
+Restart=on-failure
+RestartSec=5
+SupplementaryGroups=video gpio
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,38 @@
+# Copy to config.toml. Every key is optional; values shown are the defaults.
+
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[led]
+pin = 18            # BCM GPIO number driving the MOSFET gate
+active_high = true
+
+[button]
+# pin = 17          # optional push button between this GPIO and GND (internal pull-up). Unset = no button.
+
+[output]
+dir = "~/captures"
+dpi = 200
+keep = 200          # delete the oldest captures beyond this many (0 = never)
+gallery = 24        # captures listed on the web page
+
+[camera]
+settle_s = 1.0      # auto-exposure settle time under the LED before autofocus
+af_timeout_s = 6.0
+af_range = "full"   # normal | macro | full
+
+[board]
+board_w = 260.0
+board_h = 330.0
+page_w = 215.9
+page_h = 279.4
+marker_size = 18.0   # the black square, outer edge to outer edge
+
+# Marker CENTRES in board mm: origin = board top-left corner seen from above (clip at the top),
+# x to the right, y down. Markers must be stuck on upright (as printed). REPLACE with measured values.
+[board.markers]
+0 = [45.0, 12.65]     # top-left
+1 = [215.0, 12.65]    # top-right
+2 = [215.0, 317.35]   # bottom-right
+3 = [45.0, 317.35]    # bottom-left

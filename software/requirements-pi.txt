@@ -1,0 +1,5 @@
+# Installed into a venv created with --system-site-packages (picamera2, gpiozero, flask, pillow come from apt).
+# Bookworm's apt python3-opencv is 4.6, which has no cv2.aruco.ArucoDetector, so OpenCV comes from pip.
+# <4.10 and numpy<2 keep the venv on the same numpy 1.x ABI as the apt-built picamera2 dependencies.
+opencv-contrib-python-headless>=4.7,<4.10
+numpy<2
