@@ -280,7 +280,23 @@ def test_restart_keeps_live_page():
 def test_status_shape():
     w, _, _ = make()
     st = w.status()
-    assert set(st) == {"live", "qr_visible", "pending", "last"} and st["qr_visible"] is None
+    assert set(st) == {"live", "qr_visible", "pending", "last", "last_at", "last_sent_at", "calls_last_hour",
+                       "dry_run"}
+    assert st["qr_visible"] is None and st["last_at"] is None and st["last_sent_at"] is None
+    assert st["calls_last_hour"] == 0 and st["dry_run"] is False
+
+
+def test_status_tracks_checks_sends_and_calls():
+    w, clock, _ = make(gate=AlwaysChanged(), min_interval_s=0)
+    w.wall = lambda: 1_800_000_000.0
+    ticks(w, clock, 3)
+    st = w.status()
+    assert st["calls_last_hour"] == 3 and st["last"] == "sent"
+    import time as _t
+    assert st["last_at"] == _t.strftime("%Y-%m-%dT%H:%M:%S", _t.localtime(1_800_000_000.0))
+    assert st["last_sent_at"] == st["last_at"]
+    clock.t += 3601
+    assert w.status()["calls_last_hour"] == 0
 
 
 def test_on_result_called_with_page():

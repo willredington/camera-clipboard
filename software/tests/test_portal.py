@@ -139,3 +139,9 @@ def test_page_text_is_not_injected_as_html(env):
     docs.add_revision(3, IMG, "<script>alert(1)</script>")
     assert b"<script>alert(1)</script>" not in c.get("/").data
     assert b"<script>alert(1)</script>" not in c.get("/pages/3").data
+
+
+def test_index_has_status_bar(env):
+    c, *_ = env
+    html = c.get("/").data
+    assert b'id="status"' in html and b"calls_last_hour" in html

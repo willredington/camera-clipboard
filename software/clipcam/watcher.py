@@ -40,13 +40,26 @@ class Watcher:
         self._no_qr_pending = False   # a changed frame was seen but its QR didn't read: may not even be this page
         self._qr_visible: bool | None = None
         self._last = "starting"
+        self.wall: Callable[[], float] = time.time   # wall clock for timestamps shown in the portal
+        self._last_at: str | None = None
+        self._last_sent_at: str | None = None
 
     def status(self) -> dict:
+        now = self.clock()
         return {"live": self.documents.live(), "qr_visible": self._qr_visible,
-                "pending": self._pending or self._no_qr_pending, "last": self._last}
+                "pending": self._pending or self._no_qr_pending, "last": self._last,
+                "last_at": self._last_at, "last_sent_at": self._last_sent_at,
+                "calls_last_hour": sum(1 for t in self._calls if now - t < 3600),
+                "dry_run": bool(self.cfg.dry_run or self.ocr is None)}
+
+    def _stamp(self) -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(self.wall()))
 
     def step(self) -> str:
         self._last = self._step()
+        self._last_at = self._stamp()
+        if self._last in ("sent", "dry_run"):
+            self._last_sent_at = self._last_at
         return self._last
 
     def _step(self) -> str:

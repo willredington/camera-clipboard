@@ -85,6 +85,10 @@ _DOC_STYLE = """
  .card:hover{border-color:#94a3b8}.card b{display:block;margin:4px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .empty{color:#6b7280;font-style:italic}
  .revs li{margin:4px 0}
+ #status{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;background:#1f2937;color:#e5e7eb;
+   border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:.85rem}
+ #status b{color:#fff} .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;background:#9ca3af}
+ .dot.ok{background:#22c55e}.dot.busy{background:#3b82f6}.dot.warn{background:#f59e0b}.dot.bad{background:#ef4444}
 """
 
 _DOC_SCRIPT = """
@@ -106,10 +110,32 @@ DOCS_PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Clipboard documents</title><style>""" + _DOC_STYLE + """</style></head><body>
 <nav><b>Documents</b> <a href="/camera">Camera</a></nav>
+<div id="status"><span class="empty">Status loading...</span></div>
 <section class="live" id="live"><span class="empty">Loading...</span></section>
 <h3>Archive</h3>
 <div class="grid" id="archive"></div>
 <script>""" + _DOC_SCRIPT + """
+// What the watcher's last step means, for the status bar: [label, dot class].
+const STEP={starting:['starting','busy'],dark:['too dark','warn'],blank:['blank page','ok'],moving:['moving (hand/pen)','busy'],
+  settling:['settling','busy'],unchanged:['watching: no new writing','ok'],changed:['new writing','busy'],
+  no_qr:['new writing, waiting for QR','warn'],cooldown:['cooldown before sending','busy'],rate_limited:['hourly limit reached','bad'],
+  backoff:['waiting after an error','bad'],dry_run:['dry run: would send','ok'],sent:['sent for transcription','ok'],
+  ocr_error:['transcription failed','bad'],camera_error:['camera error','bad']};
+function renderStatus(st){
+  const bar=$('status');bar.replaceChildren();
+  if(!st){bar.append(el('span',null,'Auto-capture is off'));return;}
+  const [label,cls]=STEP[st.last]||[st.last,'busy'];
+  const now=el('span');now.append(el('span','dot '+cls),el('b',null,label));
+  const checked=el('span',null,'checked '+(st.last_at?ago(st.last_at):'never'));
+  const live=el('span',null,st.live==null?'no live page':'live: page '+st.live);
+  const qr=el('span',null,st.qr_visible==null?'QR: not checked yet':st.qr_visible?'QR visible':'QR not visible');
+  const sent=el('span',null,'last sent '+(st.last_sent_at?ago(st.last_sent_at):'never'));
+  const calls=el('span',null,st.calls_last_hour+' API calls in the last hour');
+  bar.append(now,checked,live,qr,sent,calls);
+  if(st.dry_run)bar.append(el('span','tag warn','DRY RUN'));
+  // A watcher that hasn't checked for a while is probably stuck or the service is down.
+  if(st.last_at&&(Date.now()-new Date(st.last_at).getTime())>15000){now.firstChild.className='dot bad';}
+}
 let liveText='';
 function renderLive(j){
   const box=$('live');box.replaceChildren();
@@ -142,7 +168,10 @@ function renderArchive(list){
     g.append(a);
   }
 }
-async function pollLive(){try{renderLive(await (await fetch('/api/live')).json());}catch(e){}setTimeout(pollLive,2000);}
+async function pollLive(){
+  try{const j=await (await fetch('/api/live')).json();renderStatus(j.status);renderLive(j);}
+  catch(e){const bar=$('status');bar.replaceChildren(el('span','dot bad'),el('b',null,'server not responding'));}
+  setTimeout(pollLive,2000);}
 async function pollArchive(){try{renderArchive(await (await fetch('/api/pages')).json());}catch(e){}setTimeout(pollArchive,10000);}
 pollLive();pollArchive();
 </script></body></html>"""
