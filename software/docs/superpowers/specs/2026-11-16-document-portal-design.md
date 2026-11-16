@@ -56,7 +56,7 @@ The portal is a **debugging tool**, not the production UI. It should make it eas
 - A frame is sent for OCR only if the page's QR decodes in **that same frame**. If the gate says "changed" but no QR decodes, don't send. Wait for a frame where it does.
 - The portal shows a visible "QR not visible" status on the live page while that's happening, so a smudged or out-of-focus code is obvious.
 - Nothing is lost, because the next frame with a readable code carries all the writing. Accepted cost: a page whose code never reads is never transcribed until the code is fixed.
-- This replaces the "unnumbered" document idea above. With this rule, OCR text always belongs to a numbered page, so drop the unnumbered document.
+- With this rule, OCR text always belongs to a numbered page. There is no "unnumbered" document.
 
 **Writing not yet sent when the page is swapped (user decision, adjusted):**
 - The system can't foresee a swap, so there's no "last frame" of the outgoing page to send.
