@@ -15,6 +15,7 @@ import cv2
 
 from .camera import FakeCamera
 from .config import Config, load_config
+from .documents import DocumentStore
 from .gate import Gate
 from .hardware import FakeLed
 from .ocr import OpenRouterOcr
@@ -39,7 +40,8 @@ def cmd_rectify(args, cfg):
         print("warning:", w)
 
 
-def build_watcher(cfg: Config, camera, store: Store, env: Mapping[str, str]) -> Watcher | None:
+def build_watcher(cfg: Config, camera, store: Store, documents: DocumentStore,
+                  env: Mapping[str, str]) -> Watcher | None:
     a = cfg.auto
     if not a.enabled:
         return None
@@ -49,12 +51,11 @@ def build_watcher(cfg: Config, camera, store: Store, env: Mapping[str, str]) -> 
         return None
     ocr = OpenRouterOcr(key, a.model, a.max_side) if key else None
 
-    def sink(img, result):
-        name = store.save_ocr(img, result.text)
-        log.info("ocr %s: %s (tokens in=%s out=%s)", name, result.text[:80].replace("\n", " \u23ce "),
+    def on_result(page, result):
+        log.info("ocr page %s: %s (tokens in=%s out=%s)", page, result.text[:80].replace("\n", " \u23ce "),
                  result.prompt_tokens, result.completion_tokens)
 
-    return Watcher(camera, Gate(cfg.gate), ocr, sink, a)
+    return Watcher(camera, Gate(cfg.gate), ocr, documents, a, on_result=on_result)
 
 
 def cmd_sheets(args):
@@ -89,7 +90,8 @@ def cmd_serve(args, cfg):
         log.info("button on GPIO%d", cfg.button.pin)
 
     stop = threading.Event()
-    watcher, wthread = build_watcher(cfg, camera, store, os.environ), None
+    documents = DocumentStore(cfg.output_dir / "pages")
+    watcher, wthread = build_watcher(cfg, camera, store, documents, os.environ), None
     if watcher is not None:
         wthread = threading.Thread(target=watcher.run, args=(stop,), name="auto-capture", daemon=True)
         wthread.start()

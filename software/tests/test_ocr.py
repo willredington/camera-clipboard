@@ -103,3 +103,7 @@ def test_malformed_body_raises():
 def test_non_json_body_raises():
     with pytest.raises(OcrError):
         OpenRouterOcr("k", "m", session=Session(Resp(200, ValueError("bad json"), "<html>"))).extract(img(100, 100))
+
+
+def test_prompt_mentions_page_number():
+    assert "Ignore the printed page number and the QR code at the top of the sheet." in PROMPT

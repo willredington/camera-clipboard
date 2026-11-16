@@ -1,16 +1,17 @@
+import tempfile
 import threading
 
 import cv2
 import numpy as np
-import pytest
 
 from clipcam.camera import FakeCamera
 from clipcam.config import AutoCfg, load_config
+from clipcam.documents import DocumentStore
 from clipcam.gate import Decision, Gate, GateCfg
 from clipcam.ocr import OcrError, OcrResult
 from clipcam.store import Store
 from clipcam.watcher import Watcher
-from test_gate import page
+from test_gate import page, small_page
 
 
 class Clock:
@@ -37,31 +38,50 @@ class AlwaysChanged:
     """Gate stub that always wants to send."""
     def __init__(self):
         self.marked = 0
+        self.reference = None
 
     def check(self, bgr):
         return Decision(True, "changed", 200.0, 0.01, 0.0, None)
+
+    def recheck(self):
+        return self.check(None)
 
     def mark_sent(self):
         self.marked += 1
 
 
 class Ocr:
-    def __init__(self, script=("ok",)):
-        self.script, self.calls = list(script), 0
+    def __init__(self, script=("ok",), text="hello"):
+        self.script, self.calls, self.text = list(script), 0, text
 
     def extract(self, bgr):
         self.calls += 1
         what = self.script.pop(0) if len(self.script) > 1 else self.script[0]
         if what == "err":
             raise OcrError("HTTP 500: boom", 500)
-        return OcrResult("hello", "m", 5, 1)
+        return OcrResult(self.text, "m", 5, 1)
 
 
-def make(gate=None, ocr=None, cam=None, **cfg):
-    clock, sink = Clock(), []
-    w = Watcher(cam or Cam(), gate or Gate(GateCfg()), ocr if ocr is not None else Ocr(),
-                lambda img, res: sink.append(res), AutoCfg(**cfg), clock=clock)
-    return w, clock, sink
+class Pages:
+    """Scripted QR reader: whatever page id is set (None = QR not readable)."""
+    def __init__(self, n=1):
+        self.n = n
+
+    def __call__(self, img):
+        return self.n
+
+
+def make(gate=None, ocr=None, cam=None, pages=None, docs=None, on_result=None, **cfg):
+    clock = Clock()
+    docs = docs or DocumentStore(tempfile.mkdtemp())
+    w = Watcher(cam or Cam(), gate or Gate(GateCfg()), ocr if ocr is not None else Ocr(), docs, AutoCfg(**cfg),
+                clock=clock, read_page=pages or Pages(1), on_result=on_result)
+    return w, clock, docs
+
+
+def revisions(docs, n=1):
+    p = docs.get(n)
+    return [] if p is None else p["revisions"]
 
 
 def ticks(w, clock, n, dt=2.0):
@@ -72,10 +92,12 @@ def ticks(w, clock, n, dt=2.0):
     return out
 
 
+# --- unchanged behaviour (cost controls) ---
+
 def test_unchanged_page_sends_once():
-    w, clock, sink = make()
+    w, clock, docs = make()
     out = ticks(w, clock, 20)
-    assert out.count("sent") == 1 and out[-1] == "unchanged" and len(sink) == 1
+    assert out.count("sent") == 1 and out[-1] == "unchanged" and len(revisions(docs)) == 1
 
 
 def test_cooldown_between_sends():
@@ -92,15 +114,14 @@ def test_hourly_cap():
 
 
 def test_ocr_error_backs_off_then_retries():
-    gate = Gate(GateCfg())
     ocr = Ocr(["err", "ok"])
-    w, clock, sink = make(gate=gate, ocr=ocr)
+    w, clock, docs = make(ocr=ocr)
     out = ticks(w, clock, 25)  # 50 s
     first_err = out.index("ocr_error")
     sent = out.index("sent")
     assert all(o == "backoff" for o in out[first_err + 1:sent])
     assert (sent - first_err) * 2 >= 30          # waited out the 30 s backoff
-    assert len(sink) == 1 and ocr.calls == 2
+    assert len(revisions(docs)) == 1 and ocr.calls == 2
 
 
 def test_backoff_doubles_and_caps():
@@ -122,13 +143,14 @@ def test_failed_call_does_not_mark_sent():
 
 def test_dry_run_never_calls_ocr():
     ocr = Ocr()
-    w, clock, sink = make(ocr=ocr, dry_run=True)
+    w, clock, docs = make(ocr=ocr, dry_run=True)
     out = ticks(w, clock, 10)
-    assert ocr.calls == 0 and not sink and out.count("dry_run") == 1 and out[-1] == "unchanged"
+    assert ocr.calls == 0 and not revisions(docs) and out.count("dry_run") == 1 and out[-1] == "unchanged"
 
 
 def test_no_ocr_behaves_as_dry_run():
-    w = Watcher(Cam(), AlwaysChanged(), None, lambda *a: None, AutoCfg(), clock=Clock())
+    w, _, _ = make(gate=AlwaysChanged(), ocr=None)
+    w.ocr = None
     assert w.step() == "dry_run"
 
 
@@ -139,8 +161,14 @@ def test_camera_error_does_not_crash():
 
 def test_rotation_and_roi_applied_before_ocr():
     seen = []
-    w = Watcher(Cam(frame=np.zeros((100, 200, 3), np.uint8)), AlwaysChanged(), Ocr(),
-                lambda img, res: seen.append(img.shape), AutoCfg(rotate_cw=270, roi=[0, 0, 1, 0.5]), clock=Clock())
+
+    class SeeOcr(Ocr):
+        def extract(self, bgr):
+            seen.append(bgr.shape)
+            return super().extract(bgr)
+
+    w, _, _ = make(cam=Cam(frame=np.zeros((100, 200, 3), np.uint8)), gate=AlwaysChanged(), ocr=SeeOcr(),
+                   rotate_cw=270, roi=[0, 0, 1, 0.5])
     assert w.step() == "sent" and seen == [(100, 100, 3)]
 
 
@@ -154,14 +182,115 @@ def test_run_stops_and_survives_exceptions():
                 raise ValueError("bad frame")
             return super().check(bgr)
 
-    gate, stop = Boom(), threading.Event()
-    sink = []
-    w = Watcher(Cam(), gate, Ocr(), lambda img, res: (sink.append(res), stop.set()), AutoCfg(interval_s=0.01))
+    gate, stop, results = Boom(), threading.Event(), []
+    w, _, _ = make(gate=gate, interval_s=0.01, on_result=lambda n, r: (results.append(r), stop.set()))
+    w.clock = __import__("time").monotonic
     t = threading.Thread(target=w.run, args=(stop,), daemon=True)
     t.start()
     t.join(5)
-    assert not t.is_alive() and gate.n >= 2 and len(sink) == 1
+    assert not t.is_alive() and gate.n >= 2 and len(results) == 1
 
+
+def test_logs_gate_result_only_when_it_changes(caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="clipcam.watcher")
+    w, clock, _ = make(dry_run=True)
+    ticks(w, clock, 8)  # settling, settling, dry_run, unchanged x5
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("gate:")]
+    assert [l.split()[1] for l in lines] == ["settling", "changed", "unchanged"], lines
+
+
+# --- pages (document portal Task 4) ---
+
+def test_first_qr_makes_page_live():
+    w, clock, docs = make(pages=Pages(5))
+    assert "sent" in ticks(w, clock, 4)
+    assert docs.live() == 5 and docs.get(5)["text"] == "hello"
+    assert w.status()["live"] == 5 and w.status()["qr_visible"] is True
+
+
+def test_no_qr_never_sends_or_archives():
+    docs = DocumentStore(tempfile.mkdtemp())
+    docs.set_live(5)
+    ocr = Ocr()
+    w, clock, _ = make(gate=AlwaysChanged(), ocr=ocr, pages=Pages(None), docs=docs)
+    assert ticks(w, clock, 6) == ["no_qr"] * 6
+    assert ocr.calls == 0 and docs.live() == 5
+    st = w.status()
+    assert st["qr_visible"] is False and st["pending"] is True and st["last"] == "no_qr"
+
+
+def test_no_qr_on_unchanged_frame_is_just_unchanged():
+    pages = Pages(1)
+    w, clock, _ = make(pages=pages)
+    ticks(w, clock, 4)
+    pages.n = None
+    assert w.step() == "unchanged" and w.status()["qr_visible"] is False
+
+
+def test_switch_archives_and_marks_unsent():
+    cam, pages = Cam(small_page(["page five"])), Pages(5)
+    w, clock, docs = make(cam=cam, pages=pages, min_interval_s=60)
+    assert "sent" in ticks(w, clock, 4)
+    cam.frame = small_page(["page five", "more writing here"])
+    out = ticks(w, clock, 4)
+    assert "cooldown" in out and w.status()["pending"]
+    cam.frame, pages.n = small_page(["a different sheet"]), 6
+    ticks(w, clock, 4)
+    assert docs.live() == 6
+    assert docs.get(5)["unsent"] is True
+
+
+def test_return_page_resumes_reference():
+    a, b = small_page(["page five words"]), small_page(["six six six", "other"])
+    cam, pages, ocr = Cam(a), Pages(5), Ocr()
+    w, clock, docs = make(cam=cam, pages=pages, ocr=ocr, min_interval_s=0)
+    assert ticks(w, clock, 4).count("sent") == 1
+    cam.frame, pages.n = b, 6
+    assert ticks(w, clock, 4).count("sent") == 1
+    calls = ocr.calls
+    cam.frame, pages.n = a, 5
+    out = ticks(w, clock, 4)
+    assert "sent" not in out and out[-1] == "unchanged" and ocr.calls == calls
+    assert docs.live() == 5 and len(revisions(docs, 5)) == 1
+
+
+def test_return_page_with_new_writing_sends():
+    a = small_page(["page five words"])
+    cam, pages = Cam(a), Pages(5)
+    w, clock, docs = make(cam=cam, pages=pages, min_interval_s=0)
+    ticks(w, clock, 4)
+    cam.frame, pages.n = small_page(["six six six"]), 6
+    ticks(w, clock, 4)
+    docs.set_unsent(5, True)
+    cam.frame, pages.n = small_page(["page five words", "added later on"]), 5
+    assert "sent" in ticks(w, clock, 4)
+    assert len(revisions(docs, 5)) == 2 and docs.get(5)["unsent"] is False
+
+
+def test_restart_keeps_live_page():
+    docs = DocumentStore(tempfile.mkdtemp())
+    docs.set_live(9)
+    w, clock, _ = make(docs=docs, pages=Pages(9))
+    assert w.status()["live"] == 9
+    assert "sent" in ticks(w, clock, 4)
+    assert len(revisions(docs, 9)) == 1
+
+
+def test_status_shape():
+    w, _, _ = make()
+    st = w.status()
+    assert set(st) == {"live", "qr_visible", "pending", "last"} and st["qr_visible"] is None
+
+
+def test_on_result_called_with_page():
+    got = []
+    w, clock, _ = make(pages=Pages(4), on_result=lambda n, r: got.append((n, r.text)))
+    ticks(w, clock, 4)
+    assert got == [(4, "hello")]
+
+
+# --- other modules ---
 
 def test_fake_camera_capture_frame(tmp_path):
     for i in range(2):
@@ -189,7 +318,7 @@ def test_config_auto_and_gate_sections(tmp_path):
     assert not d.auto.enabled and d.auto.interval_s == 2.0 and d.camera.watch_width == 2304
 
 
-# --- build_watcher (Task 5) ---
+# --- build_watcher ---
 from clipcam.__main__ import build_watcher  # noqa: E402
 from clipcam.config import Config  # noqa: E402
 from clipcam.ocr import OpenRouterOcr  # noqa: E402
@@ -203,42 +332,37 @@ def auto_cfg(**kw):
     return cfg
 
 
+def bw(cfg, tmp_path, env):
+    return build_watcher(cfg, Cam(), Store(tmp_path, 200), DocumentStore(tmp_path / "pages"), env)
+
+
 def test_build_watcher_disabled(tmp_path):
-    assert build_watcher(Config(), Cam(), Store(tmp_path, 200), {"OPENROUTER_API_KEY": "k"}) is None
+    assert bw(Config(), tmp_path, {"OPENROUTER_API_KEY": "k"}) is None
 
 
 def test_build_watcher_missing_key_logs(tmp_path, caplog):
-    assert build_watcher(auto_cfg(), Cam(), Store(tmp_path, 200), {}) is None
+    assert bw(auto_cfg(), tmp_path, {}) is None
     assert "OPENROUTER_API_KEY" in caplog.text
 
 
 def test_build_watcher_dry_run_without_key(tmp_path):
-    w = build_watcher(auto_cfg(dry_run=True), Cam(), Store(tmp_path, 200), {})
+    w = bw(auto_cfg(dry_run=True), tmp_path, {})
     assert w is not None and w.ocr is None
 
 
 def test_build_watcher_with_key(tmp_path):
-    w = build_watcher(auto_cfg(model="x/y"), Cam(), Store(tmp_path, 200), {"OPENROUTER_API_KEY": "k"})
+    w = bw(auto_cfg(model="x/y"), tmp_path, {"OPENROUTER_API_KEY": "k"})
     assert isinstance(w.ocr, OpenRouterOcr) and w.ocr.model == "x/y" and w.ocr.api_key == "k"
 
 
 def test_build_watcher_custom_env_name(tmp_path):
-    w = build_watcher(auto_cfg(api_key_env="MY_KEY"), Cam(), Store(tmp_path, 200), {"MY_KEY": "z"})
+    w = bw(auto_cfg(api_key_env="MY_KEY"), tmp_path, {"MY_KEY": "z"})
     assert w.ocr.api_key == "z"
 
 
-def test_default_sink_saves_text(tmp_path):
-    store = Store(tmp_path, 200)
-    w = build_watcher(auto_cfg(), Cam(), store, {"OPENROUTER_API_KEY": "k"})
-    w.sink(np.full((10, 10, 3), 200, np.uint8), OcrResult("line1\nline2", "m", 1, 2))
-    (txt,) = (tmp_path / "ocr").glob("*.txt")
-    assert txt.read_text() == "line1\nline2"
-
-
-def test_logs_gate_result_only_when_it_changes(caplog):
+def test_build_watcher_logs_results(tmp_path, caplog):
     import logging
-    caplog.set_level(logging.INFO, logger="clipcam.watcher")
-    w, clock, _ = make(dry_run=True)
-    ticks(w, clock, 8)  # settling, settling, dry_run, unchanged x5
-    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("gate:")]
-    assert [l.split()[1] for l in lines] == ["settling", "changed", "unchanged"], lines
+    caplog.set_level(logging.INFO)
+    w = bw(auto_cfg(), tmp_path, {"OPENROUTER_API_KEY": "k"})
+    w.on_result(3, OcrResult("line1\nline2", "m", 1, 2))
+    assert "ocr page 3: line1 ⏎ line2" in caplog.text

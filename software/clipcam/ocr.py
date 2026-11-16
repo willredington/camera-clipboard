@@ -10,7 +10,8 @@ import requests
 
 URL = "https://openrouter.ai/api/v1/chat/completions"
 PROMPT = ("Transcribe all text on this page exactly as written, preserving line breaks. Output only the "
-          "transcribed text, with no commentary. If there is no text, output exactly NO_TEXT.")
+          "transcribed text, with no commentary. If there is no text, output exactly NO_TEXT. "
+          "Ignore the printed page number and the QR code at the top of the sheet.")
 NO_TEXT = "NO_TEXT"
 
 
